@@ -32,6 +32,7 @@ entity gpu is
       rotate180            : in  std_logic;
       fixedVBlank          : in  std_logic;
       vCrop                : in  std_logic_vector(1 downto 0);
+      hCrop                : in  std_logic;
 
       Gun1CrosshairOn      : in  std_logic;
       Gun1X                : in  unsigned(7 downto 0);
@@ -88,6 +89,7 @@ entity gpu is
 
       hblank_tmr           : out std_logic := '0';
       vblank_tmr           : out std_logic := '0';
+      dotclock             : out std_logic;
       
       video_hsync          : out std_logic := '0';
       video_vsync          : out std_logic := '0';
@@ -1426,6 +1428,10 @@ begin
             vram_pauseCnt <= 0;
          end if;
          
+         if (vram_pause = '1' and vramState = WAITUNPAUSE and ce = '0') then
+            vram_paused <= '1';
+         end if;
+         
          if (reset = '1') then
             
             vramState   <= IDLE;
@@ -1447,6 +1453,7 @@ begin
                         if (reqVRAMXPos(1 downto 0) /= "00" and ((to_integer(reqVRAMXPos(1 downto 0)) + to_integer(reqVRAMSize) > 4))) then 
                            reqVRAMSizeRounded(10 downto 2) := reqVRAMSizeRounded(10 downto 2) + 1;
                         end if;
+                        if (reqVRAMSizeRounded > 1024) then reqVRAMSizeRounded := to_unsigned(1024, 11); end if;
                         vramState     <= READVRAM;
                         vram_ADDR     <= std_logic_vector(reqVRAMYPos) & std_logic_vector(reqVRAMXPos(9 downto 2)) & "000";
                         vram_RD       <= '1';
@@ -1572,6 +1579,7 @@ begin
    videoout_settings.rotate180               <= rotate180;
    videoout_settings.fixedVBlank             <= fixedVBlank;
    videoout_settings.vCrop                   <= vCrop;
+   videoout_settings.hCrop                   <= hCrop;
    
    videoout_ss_in.interlacedDisplayField  <= ss_timing_in(4)(19);
    videoout_ss_in.nextHCount              <= ss_timing_in(4)(11 downto 0);
@@ -1652,6 +1660,8 @@ begin
    video_b              <= videoout_out.b;             
    video_isPal          <= videoout_out.isPal;
    video_hResMode       <= videoout_out.hResMode;
+   
+   dotclock             <= videoout_reports.dotclock;
    
 --##############################################################
 --############################### savestates

@@ -41,6 +41,7 @@ entity psx_top is
       rotate180             : in  std_logic;
       fixedVBlank           : in  std_logic;
       vCrop                 : in  std_logic_vector(1 downto 0);
+      hCrop                 : in  std_logic;
       SPUon                 : in  std_logic;
       SPUSDRAM              : in  std_logic;
       REVERBOFF             : in  std_logic;
@@ -381,6 +382,7 @@ architecture arch of psx_top is
    -- gpu
    signal vblank_tmr             : std_logic;
    signal hblank_tmr             : std_logic;
+   signal dotclock               : std_logic;
    
    signal vram_pause             : std_logic; 
    signal vram_paused            : std_logic; 
@@ -754,7 +756,6 @@ begin
          if (REVERBOFF             = '1') then debugmodeOn <= '1'; end if;
          if (REPRODUCIBLESPUDMA    = '1') then debugmodeOn <= '1'; end if;
          if (videoout_on           = '0') then debugmodeOn <= '1'; end if;
-         if (pal60                 = '1') then debugmodeOn <= '1'; end if;
          if (PATCHSERIAL           = '1') then debugmodeOn <= '1'; end if;
          
       end if;
@@ -1219,7 +1220,7 @@ begin
       
       error                => errorTimer,
       
-      dotclock             => '0', -- todo
+      dotclock             => dotclock,
       hblank               => hblank_tmr,
       vblank               => vblank_tmr,
       
@@ -1328,6 +1329,7 @@ begin
       rotate180            => rotate180,
       fixedVBlank          => fixedVBlank,
       vCrop                => vCrop,   
+      hCrop                => hCrop,   
       
       Gun1CrosshairOn      => Gun1CrosshairOn,
       Gun1X                => Gun1X,
@@ -1384,6 +1386,7 @@ begin
 
       hblank_tmr           => hblank_tmr,
       vblank_tmr           => vblank_tmr,
+      dotclock             => dotclock,
       
       video_hsync          => hsync, 
       video_vsync          => vsync, 

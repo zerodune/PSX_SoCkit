@@ -29,6 +29,7 @@ package pGPU is
       rotate180               : std_logic;
       fixedVBlank             : std_logic;
       vCrop                   : std_logic_vector(1 downto 0);
+      hCrop                   : std_logic;
    end record;
    
    type tvideoout_reports is record
@@ -40,6 +41,7 @@ package pGPU is
       inVsync                 : std_logic;
       interlacedDisplayField  : std_logic;
       activeLineLSB           : std_logic;
+      dotclock                : std_logic;
    end record;
   
    type tvideoout_ss is record

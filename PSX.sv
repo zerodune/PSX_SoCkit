@@ -386,6 +386,7 @@ parameter CONF_STR = {
 	"P1O[62],Fixed HBlank,On,Off;",
 	"P1O[55],Fixed VBlank,Off,On;",
 	"d5P1O[4:3],Vertical Crop,Off,On(224/270),On(216/256);",
+	"P1O[67],Horizontal Crop,Off,On;",
 	"P1O[22],Dithering,On,Off;",
 	"P1O[41],Deinterlacing,Weave,Bob;",
 	"P1O[60],Sync 480i for HDMI,Off,On;",
@@ -406,6 +407,7 @@ parameter CONF_STR = {
 	"P2O[58],Turbo(Cheats Off),Off,On(U);",
 	"P2O[64],Pause when OSD open,On,Off(U);",
 	"P2O[65],Pause when HPS busy,On,Off(U);",
+	"P2O[15],PAL 60Hz Hack,Off,On(U);",
 	
 	"h3-;",
 	"h3P3,Debug;",
@@ -420,14 +422,13 @@ parameter CONF_STR = {
 	"h3P3O[20],RepTimingDMA,Off,On;",
 	"h3P3O[43],RepTimingSPUDMA,Off,On;",
 	"h3P3O[26],DMAinBLOCKs,Off,On;",
-	"h3P3O[15],Force 60Hz PAL,Off,On;",
 	"h3P3O[27],Textures,On,Off;",
 	//"h3P3O[54],Patch TTY,Off,On;",
 	"h3P3T1,Advance Pause;",
 
 	"-   ;",
 	"R0,Reset;",
-	"J1,Triangle,Circle,Cross,Square,Select,Start,L1,R1,L2,R2,L3,R3,Savestates,Fastforward;",
+	"J1,Triangle,Circle,Cross,Square,Select,Start,L1,R1,L2,R2,L3,R3,Savestates,Fastforward,Pause(Core),Toggle Dualshock;",
 	"jn,Triangle,Circle,Cross,Square,Select,Start,L1,R1,L2,R2,L3,R3,X,X;",
 	"I,",
 	"Slot=DPAD|Save/Load=Start+DPAD,",
@@ -482,11 +483,11 @@ wire        ioctl_wr;
 wire  [7:0] ioctl_index;
 reg         ioctl_wait = 0;
 
-wire [17:0] joy;
-wire [17:0] joy_unmod;
-wire [17:0] joy2;
-wire [17:0] joy3;
-wire [17:0] joy4;
+wire [19:0] joy;
+wire [19:0] joy_unmod;
+wire [19:0] joy2;
+wire [19:0] joy3;
+wire [19:0] joy4;
 
 wire [10:0] ps2_key;
 
@@ -574,7 +575,7 @@ hps_io #(.CONF_STR(CONF_STR), .WIDE(1), .VDNUM(4), .BLKSZ(3)) hps_io
    .direct_video(DIRECT_VIDEO)
 );
 
-assign joy = joy_unmod[16] ? 16'b0 : joy_unmod;
+assign joy = joy_unmod[16] ? 20'b0 : joy_unmod;
 
 assign sd_rd[0] = 0;
 assign sd_wr[0] = 0;
@@ -806,6 +807,9 @@ reg psx_info_req;
 wire resetFromCD;
 reg  cdDownloadReset = 0;
 
+reg [3:0] ToggleDS = 0;
+reg [3:0] joy19_1 = 0;
+
 always @(posedge clk_1x) begin
 
    psx_info_req <= 0;
@@ -842,6 +846,13 @@ always @(posedge clk_1x) begin
    end
    
    if (joy[14] && joy[15] && joy[8]) dbg_enabled <= 1;  // L3+R3+Select
+   
+   // DS toggle
+   joy19_1 <= {joy4[19] ,joy3[19] ,joy2[19] ,joy[19] };
+   ToggleDS[0] <=  joy[19] & ~joy19_1[0];
+   ToggleDS[1] <= joy2[19] & ~joy19_1[1];
+   ToggleDS[2] <= joy3[19] & ~joy19_1[2];
+   ToggleDS[3] <= joy4[19] & ~joy19_1[3];
 
 end
 
@@ -856,12 +867,24 @@ reg heartbeat_1 = 0;
 
 reg reset = 0;
 
+reg buttonpause_1 = 0;
+reg button_paused = 0;
+
 always @(posedge clk_1x) begin
 
    paused <= 0;
 
    // pause from OSD open
    if (~status[64] & OSD_STATUS & (unpause == 0)) begin
+      paused <= 1;
+   end
+   
+   // pause from button
+   buttonpause_1 <= joy[18];
+   if (joy[18] & ~buttonpause_1) begin
+      button_paused <= ~button_paused;
+   end
+   if (button_paused) begin
       paused <= 1;
    end
    
@@ -927,6 +950,7 @@ psx
    .rotate180(status[24]),
    .fixedVBlank(status[55]),
    .vCrop(status[4:3]),
+   .hCrop(status[67]),
    .SPUon(~status[30]),
    .SPUSDRAM(status[44] & SDRAM2_EN),
    .REVERBOFF(0),
@@ -1057,6 +1081,7 @@ psx
    .KeyL1      ({joy4[10],joy3[10],joy2[10],joy[10]}),
    .KeyL2      ({joy4[12],joy3[12],joy2[12],joy[12]}),
    .KeyL3      ({joy4[14],joy3[14],joy2[14],joy[14]}),
+   .ToggleDS   (ToggleDS),
    .Analog1XP1(joystick_analog_l0[7:0]),       
    .Analog1YP1(joystick_analog_l0[15:8]),       
    .Analog2XP1(joystick_analog_r0[7:0]),           
@@ -1521,14 +1546,16 @@ wire [15:0]ackTimer;
 wire ackNone;
 wire oneTime;
 wire [3:0]bitCnt;
-wire [7:0]byteCnt;
-wire [6:0]bytesLeft;
+wire [8:0]byteCnt;
+wire [8:0]bytesLeft;
 wire [7:0]pad1ID;
 wire [7:0]pad2ID;
 wire [7:0]targetID;
 wire irq10Snac;
 wire csync;
 wire MCtransfer;
+wire PStransfer;
+wire [7:0]PSdatalength;
 
 assign clk8Snac = bitCnt < 8 ? clk9Snac : 1'b1;
 
@@ -1566,12 +1593,12 @@ begin
 	oldselectedPort2 <= selectedPort2Snac;
 
 	if ((~oldselectedPort1 && selectedPort1Snac) || (~oldselectedPort2 && selectedPort2Snac)) begin
-		byteCnt <= 8'd0;
+		byteCnt <= 9'd0;
 	end
 
 	if (beginTransferSnac) begin
 		bitCnt  <= 4'd0;
-		byteCnt <= byteCnt + 8'd1 ;
+		byteCnt <= byteCnt + 9'd1 ;
 	end
 	
 	oldClk8 <= clk8Snac;
@@ -1601,7 +1628,7 @@ begin
 			oneTime <= 1'b1;
 			if (MCtransfer) ackTimer <= 16'd60000;//very late ack after 7th byte. around 56000 cycles (1.7ms) with a sony MC. 3rd party MCs don't seem to do this
 			else begin
-				if (byteCnt == bytesLeft + bytesLeft + 3) ackTimer <= 16'd400;//only wait around 150 on last byte
+				if (byteCnt == bytesLeft + 3) ackTimer <= 16'd400;//only wait around 150 on last byte
 				else ackTimer <= 16'd1800;//1st byte of multitap(1375) cycles to ack,digital(460),analog(350-400),ds2(250-400),mouse(120),guncon(270)
 			end
 		end	
@@ -1636,7 +1663,7 @@ begin
 	if (actionNextPadSnac && ((snacPort1 && selectedPort1Snac) || (snacPort2 && selectedPort2Snac))) begin //logic for joypad.vhd
 		if (oneTime) begin
 			if (ackNone) begin
-				if (byteCnt < (bytesLeft + bytesLeft + 4)) begin // no ack on last byte of transfer
+				if (byteCnt < (bytesLeft + 4)) begin // no ack on last byte of transfer
 					receiveBufferSnac <= Receive;
 					receiveValidSnac <= 1'b1;
 					actionNextSnac <= 1'b1;
@@ -1651,7 +1678,7 @@ begin
 					//ackSnac <= 1'b1;
 				end
 				else begin
-					if (byteCnt < (bytesLeft + bytesLeft + 4)) begin
+					if (byteCnt < (bytesLeft + 4)) begin
 						receiveBufferSnac <= Receive;
 						receiveValidSnac <= 1'b1;
 						//ackSnac <= 1'b1;
@@ -1678,21 +1705,44 @@ begin
 		if (byteCnt == 2) begin 
 			if (targetID == 8'h81 || targetID == 8'h82 || targetID == 8'h83 || targetID == 8'h84) begin 	//memcard quirks
 				MCtransfer <= 1'b1;
-				if (transmitValueSnac == 8'h52) bytesLeft <= 7'd69;//read
-				if (transmitValueSnac == 8'h57) bytesLeft <= 7'd68;//write
-				if (transmitValueSnac == 8'h53) bytesLeft <= 7'd4;//ID Cmd			
+				if (transmitValueSnac == 8'h52) bytesLeft <= 9'd137;//read
+				if (transmitValueSnac == 8'h57) bytesLeft <= 9'd135;//write
+				if (transmitValueSnac == 8'h53) bytesLeft <= 9'd7;//ID Cmd
+				//pocketstation
+				if (transmitValueSnac == 8'h50) bytesLeft <= 9'd0;//Change a FUNC 03h related value
+				if (transmitValueSnac == 8'h58) bytesLeft <= 9'd2;//Get an ID or Version value
+				if (transmitValueSnac == 8'h59) bytesLeft <= 9'd6;//Prepare File Execution with Dir_index, and Parameter
+				if (transmitValueSnac == 8'h5A) bytesLeft <= 9'd18;//Get Dir_index, ComFlags, F_SN, Date, and Time
+				if (transmitValueSnac == 8'h5D) bytesLeft <= 9'd3;//Execute Custom Download Notification					
+				if (transmitValueSnac == 8'h5E) bytesLeft <= 9'd3;//Get-and-Send ComFlags.bit1,3,2
+				if (transmitValueSnac == 8'h5F) bytesLeft <= 9'd1;//Get-and-Send ComFlags.bit0				
+				if (transmitValueSnac == 8'h5B) begin//Execute Function and transfer data from Pocketstation to PSX--variable length
+					bytesLeft <= 9'd3;
+					PStransfer <= 1'b1;
+				end	
+				if (transmitValueSnac == 8'h5C) begin//Execute Function and transfer data from PSX to Pocketstation--variable length
+					bytesLeft <= 9'd3;
+					PStransfer <= 1'b1;
+				end
 			end 
 			else begin //joypad quirks
 				MCtransfer <= 1'b0;
 				if (selectedPort1Snac) pad1ID <= Receive;
 				if (selectedPort2Snac) pad2ID <= Receive;
 
-				if (Receive == 8'h80) bytesLeft <= 7'd16; //for multitap
-				else bytesLeft <= {3'd0, Receive[3:0]};	
+				if (Receive == 8'h80) bytesLeft <= 9'd32; //for multitap
+				else bytesLeft <= {5'd0, (Receive[3:0] + Receive[3:0])};	
 			end
 		end
+		if (byteCnt == 4 && PStransfer == 1) begin //for pocketstation
+			bytesLeft <= bytesLeft + Receive;
+			PSdatalength <=  Receive;
+		end
+		if ((byteCnt == PSdatalength + 5) && PStransfer == 1) begin 
+			bytesLeft <= bytesLeft + Receive;
+			PStransfer <= 1'b0;
+		end		
 	end
-		
 end
 
 endmodule
